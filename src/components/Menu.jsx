@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import "./Menu.css";
 import TrasladoRapido from "./TrasladoRapido";
+import Picking from "./Picking";
 
 function LogoutIcon() {
   return (
@@ -15,6 +16,7 @@ function LogoutIcon() {
 export default function Menu({ onLogout }) {
   const [modulo, setModulo] = useState("");
   if (modulo === "traslado") return <TrasladoRapido onBack={() => setModulo("")} onLogout={onLogout} />;
+  if (modulo === "picking") return <Picking onBack={() => setModulo("")} onLogout={onLogout} />;
 
   return (
     <div className="menu-fullscreen">
@@ -26,9 +28,9 @@ export default function Menu({ onLogout }) {
         <h1 className="menu-title">Selecciona un módulo</h1>
         <div className="menu-buttons">
           <button className="menu-btn destacado" onClick={() => setModulo("traslado")}>Traslado Rápido</button>
-          <button className="menu-btn">Sección</button>
-          <button className="menu-btn">Sección</button>
-          <button className="menu-btn">Sección</button>
+          <button className="menu-btn destacado" onClick={() => setModulo("picking")}>Picking</button>
+          <button className="menu-btn destacado">Sección</button>
+          <button className="menu-btn destacado">Sección</button>
         </div>
       </main>
     </div>
