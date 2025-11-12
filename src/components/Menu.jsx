@@ -2,6 +2,7 @@ import React, { useState } from "react";
 import "./Menu.css";
 import TrasladoRapido from "./TrasladoRapido";
 import Picking from "./Picking";
+import { useAuth } from "../context/AuthContext";
 
 function LogoutIcon() {
   return (
@@ -13,16 +14,22 @@ function LogoutIcon() {
   );
 }
 
-export default function Menu({ onLogout }) {
+export default function Menu() {
+  const { logout } = useAuth();
   const [modulo, setModulo] = useState("");
-  if (modulo === "traslado") return <TrasladoRapido onBack={() => setModulo("")} onLogout={onLogout} />;
-  if (modulo === "picking") return <Picking onBack={() => setModulo("")} onLogout={onLogout} />;
+  
+  const handleLogout = async () => {
+    await logout();
+  };
+  
+  if (modulo === "traslado") return <TrasladoRapido onBack={() => setModulo("")} onLogout={handleLogout} />;
+  if (modulo === "picking") return <Picking onBack={() => setModulo("")} onLogout={handleLogout} />;
 
   return (
     <div className="menu-fullscreen">
       <header className="traslado-header">
         <span className="traslado-title">Menú principal</span>
-        <button className="header-logout" aria-label="Cerrar sesión" onClick={onLogout}><LogoutIcon /></button>
+        <button className="header-logout" aria-label="Cerrar sesión" onClick={handleLogout}><LogoutIcon /></button>
       </header>
       <main style={{paddingTop: 66}}>
         <h1 className="menu-title">Selecciona un módulo</h1>

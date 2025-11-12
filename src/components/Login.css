@@ -103,3 +103,26 @@
   background: #0e9598;
   box-shadow: 0 3px 14px rgba(16,180,184,0.14);
 }
+.login-form button:disabled {
+  background: #a0d4d6;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+.login-error {
+  background: #fee;
+  color: #c33;
+  padding: 0.75rem 1rem;
+  border-radius: 8px;
+  font-size: 0.9rem;
+  border: 1px solid #fcc;
+  margin-bottom: 0.5rem;
+  word-wrap: break-word;
+  white-space: pre-wrap;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.login-loading {
+  font-size: 1.2rem;
+  color: #10b4b8;
+  font-weight: 500;
+}
