@@ -2,6 +2,8 @@ import React, { useState } from "react";
 import "./Menu.css";
 import TrasladoRapido from "./TrasladoRapido";
 import Picking from "./Picking";
+import PruebaOBBQ from "./PruebaOBBQ";
+import Stock from "./Stock";
 import { useAuth } from "../context/AuthContext";
 
 function LogoutIcon() {
@@ -24,6 +26,8 @@ export default function Menu() {
   
   if (modulo === "traslado") return <TrasladoRapido onBack={() => setModulo("")} onLogout={handleLogout} />;
   if (modulo === "picking") return <Picking onBack={() => setModulo("")} onLogout={handleLogout} />;
+  if (modulo === "pruebaOBBQ") return <PruebaOBBQ onBack={() => setModulo("")} onLogout={handleLogout} />;
+  if (modulo === "stock") return <Stock onBack={() => setModulo("")} onLogout={handleLogout} />;
 
   return (
     <div className="menu-fullscreen">
@@ -36,8 +40,8 @@ export default function Menu() {
         <div className="menu-buttons">
           <button className="menu-btn destacado" onClick={() => setModulo("traslado")}>Traslado Rápido</button>
           <button className="menu-btn destacado" onClick={() => setModulo("picking")}>Picking</button>
-          <button className="menu-btn destacado">Sección</button>
-          <button className="menu-btn destacado">Sección</button>
+          <button className="menu-btn destacado" onClick={() => setModulo("pruebaOBBQ")}>Prueba OBTN</button>
+          <button className="menu-btn destacado" onClick={() => setModulo("stock")}>Stock</button>
         </div>
       </main>
     </div>

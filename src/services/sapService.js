@@ -108,12 +108,29 @@ export const sapRequest = async (endpoint, sessionId, options = {}) => {
     ...options,
   };
 
+  console.log('sapRequest - URL:', url);
+  console.log('sapRequest - Method:', defaultOptions.method || 'GET');
+  console.log('sapRequest - Headers:', defaultOptions.headers);
+  console.log('sapRequest - Body:', defaultOptions.body);
+
   try {
     const response = await fetch(url, defaultOptions);
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({}));
-      throw new Error(errorData.error?.message?.value || `Error ${response.status}: ${response.statusText}`);
+      let errorData;
+      try {
+        const text = await response.text();
+        console.error('Error response text:', text);
+        errorData = JSON.parse(text);
+      } catch (e) {
+        errorData = {};
+      }
+      console.error('Error response data:', errorData);
+      const errorMessage = errorData.error?.message?.value || 
+                          errorData.error?.message || 
+                          errorData.message || 
+                          `Error ${response.status}: ${response.statusText}`;
+      throw new Error(errorMessage);
     }
 
     return await response.json();
