@@ -7,6 +7,17 @@
   align-items: center;
   background: #fff;
   padding: 0;
+  position: relative;
+}
+
+.login-version {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  color: #10b4b8;
+  font-size: 0.9rem;
+  font-weight: 600;
+  font-family: 'Segoe UI', 'Arial', sans-serif;
 }
 
 .login-brand {

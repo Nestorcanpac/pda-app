@@ -68,7 +68,7 @@ export default function PruebaOBBQ({ onBack, onLogout }) {
       for (const method of methods) {
         try {
           const fullUrl = method.url.startsWith('/') ? method.url : `/${method.url}`;
-          const baseUrl = import.meta.env.DEV ? '/api/b1s/v1' : 'https://srvhana:50000/b1s/v1';
+          const baseUrl = import.meta.env.DEV ? '/api/b1s/v1' : 'http://192.168.0.52:50000/b1s/v1';
           const completeUrl = `${baseUrl}${fullUrl}`;
           
           console.log(`Intentando método: ${method.name}`);

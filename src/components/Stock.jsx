@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { sapRequest } from "../services/sapService";
+import { getStockByBin } from "../services/queries.service";
 import { useScanner } from "../hooks/useScanner";
 import "./Stock.css";
 
@@ -23,7 +23,7 @@ function LogoutIcon() {
 }
 
 export default function Stock({ onBack, onLogout }) {
-  const { session } = useAuth();
+  const { session, refreshSession, isAuthenticated } = useAuth();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState(null);
   const [error, setError] = useState("");
@@ -37,9 +37,13 @@ export default function Stock({ onBack, onLogout }) {
   });
 
   const consultarStock = async () => {
-    if (!session?.sessionId) {
-      setError("No hay sesión activa. Por favor, inicia sesión nuevamente.");
-      return;
+    // Verificar sesión primero
+    if (!isAuthenticated) {
+      const hasSession = await refreshSession();
+      if (!hasSession) {
+        setError("No hay sesión activa. Por favor, inicia sesión nuevamente.");
+        return;
+      }
     }
 
     if (!binCode.trim()) {
@@ -53,24 +57,29 @@ export default function Stock({ onBack, onLogout }) {
 
     try {
       const binCodeValue = binCode.trim();
-      const requestBody = {
-        ParamList: `binCode='${binCodeValue}'`
-      };
       
       console.log('Consultando stock para bin:', binCodeValue);
-      console.log('Body que se envía:', JSON.stringify(requestBody));
       
-      const response = await sapRequest("/SQLQueries('GetStockByBin')/List", session.sessionId, {
-        method: 'POST',
-        body: JSON.stringify(requestBody)
-      });
+      // Usar el nuevo servicio que se comunica con el backend proxy
+      const response = await getStockByBin(binCodeValue);
 
       console.log('Respuesta de GetStockByBin:', response);
 
       // Procesar la respuesta
+      // El backend retorna los datos directamente, pero puede venir en formato { value: [...] } o directamente como array
+      let stockData = response;
+      
+      // Si viene en formato { value: [...] }, extraer el array
       if (response && response.value && Array.isArray(response.value)) {
-        if (response.value.length > 0) {
-          setData(response);
+        stockData = response;
+      } else if (Array.isArray(response)) {
+        // Si viene directamente como array, envolverlo en el formato esperado
+        stockData = { value: response };
+      }
+
+      if (stockData && stockData.value && Array.isArray(stockData.value)) {
+        if (stockData.value.length > 0) {
+          setData(stockData);
         } else {
           setError("No se encontraron resultados para este bin");
           setData(null);
@@ -81,7 +90,17 @@ export default function Stock({ onBack, onLogout }) {
       }
     } catch (err) {
       console.error('Error al consultar stock:', err);
-      setError(err.message || "Error al consultar el stock");
+      
+      // Manejar errores específicos
+      let errorMessage = err.message || "Error al consultar el stock";
+      
+      if (errorMessage.includes('Sesión expirada') || errorMessage.includes('no hay sesión activa')) {
+        errorMessage = "Sesión expirada. Por favor, inicia sesión nuevamente.";
+      } else if (errorMessage.includes('No se pudo conectar al backend')) {
+        errorMessage = "No se pudo conectar al backend. Verifica que esté corriendo.";
+      }
+      
+      setError(errorMessage);
       setData(null);
     } finally {
       setLoading(false);
