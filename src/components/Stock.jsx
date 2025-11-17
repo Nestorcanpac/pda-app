@@ -58,12 +58,16 @@ export default function Stock({ onBack, onLogout }) {
     try {
       const binCodeValue = binCode.trim();
       
-      console.log('Consultando stock para bin:', binCodeValue);
+      console.log('[Stock] Consultando stock para bin:', binCodeValue);
+      console.log('[Stock] Bin code value:', JSON.stringify(binCodeValue));
       
       // Usar el nuevo servicio que se comunica con el backend proxy
       const response = await getStockByBin(binCodeValue);
-
-      console.log('Respuesta de GetStockByBin:', response);
+      
+      console.log('[Stock] Respuesta recibida:', response);
+      console.log('[Stock] Tipo de respuesta:', typeof response);
+      console.log('[Stock] Es array?', Array.isArray(response));
+      console.log('[Stock] Respuesta completa (JSON):', JSON.stringify(response, null, 2));
 
       // Procesar la respuesta
       // El backend retorna los datos directamente, pero puede venir en formato { value: [...] } o directamente como array
@@ -90,14 +94,51 @@ export default function Stock({ onBack, onLogout }) {
       }
     } catch (err) {
       console.error('Error al consultar stock:', err);
+      console.error('Error completo:', JSON.stringify(err, null, 2));
       
-      // Manejar errores específicos
-      let errorMessage = err.message || "Error al consultar el stock";
+      // Extraer mensaje de error de forma robusta
+      let errorMessage = "Error al consultar el stock";
       
-      if (errorMessage.includes('Sesión expirada') || errorMessage.includes('no hay sesión activa')) {
+      if (err) {
+        if (typeof err === 'string') {
+          errorMessage = err;
+        } else if (err.message) {
+          errorMessage = err.message;
+        } else if (err.error) {
+          errorMessage = typeof err.error === 'string' ? err.error : JSON.stringify(err.error);
+        } else if (err.data) {
+          if (typeof err.data === 'string') {
+            errorMessage = err.data;
+          } else if (err.data.error) {
+            errorMessage = err.data.error;
+          } else if (err.data.message) {
+            errorMessage = err.data.message;
+          } else {
+            errorMessage = JSON.stringify(err.data);
+          }
+        } else if (err.response?.data) {
+          const responseData = err.response.data;
+          if (typeof responseData === 'string') {
+            errorMessage = responseData;
+          } else if (responseData.error) {
+            errorMessage = responseData.error;
+          } else if (responseData.message) {
+            errorMessage = responseData.message;
+          } else {
+            errorMessage = JSON.stringify(responseData);
+          }
+        } else {
+          errorMessage = JSON.stringify(err);
+        }
+      }
+      
+      // Mensajes de error más amigables
+      if (errorMessage.includes('Sesión expirada') || errorMessage.includes('no hay sesión activa') || errorMessage.includes('401') || errorMessage.includes('403')) {
         errorMessage = "Sesión expirada. Por favor, inicia sesión nuevamente.";
-      } else if (errorMessage.includes('No se pudo conectar al backend')) {
+      } else if (errorMessage.includes('No se pudo conectar al backend') || errorMessage.includes('ERR_NETWORK') || errorMessage.includes('CORS')) {
         errorMessage = "No se pudo conectar al backend. Verifica que esté corriendo.";
+      } else if (errorMessage.includes('400') || errorMessage.includes('Bad Request')) {
+        errorMessage = `Error en la petición: ${errorMessage}. Verifica el formato del bin code.`;
       }
       
       setError(errorMessage);
@@ -118,7 +159,7 @@ export default function Stock({ onBack, onLogout }) {
           <LogoutIcon />
         </button>
       </header>
-      <main className="stock-main" style={{paddingTop: 66}}>
+      <main className="stock-main">
         <h2>Consulta de Stock por Bin Code</h2>
         
         <div className="stock-controls">
@@ -169,7 +210,6 @@ export default function Stock({ onBack, onLogout }) {
                     <thead>
                       <tr>
                         <th>#</th>
-                        <th>Bin Code</th>
                         <th>Item Code</th>
                         <th>Cantidad</th>
                       </tr>
@@ -178,7 +218,6 @@ export default function Stock({ onBack, onLogout }) {
                       {data.value.map((row, index) => (
                         <tr key={index}>
                           <td>{index + 1}</td>
-                          <td>{row.BinCode || '-'}</td>
                           <td>{row.ItemCode || '-'}</td>
                           <td>{row.OnHandQty !== undefined ? row.OnHandQty.toLocaleString() : '-'}</td>
                         </tr>

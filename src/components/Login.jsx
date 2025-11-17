@@ -72,7 +72,7 @@ export default function Login() {
   if (backendAvailable === false) {
     return (
       <div className="login-fullscreen">
-        <div className="login-version">V 15</div>
+        <div className="login-version">V 16</div>
         <div className="login-brand">
           <span className="heis">HEIS</span>
           <span className="circle-logo"></span>

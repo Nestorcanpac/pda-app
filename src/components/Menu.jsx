@@ -2,7 +2,6 @@ import React, { useState } from "react";
 import "./Menu.css";
 import TrasladoRapido from "./TrasladoRapido";
 import Picking from "./Picking";
-import PruebaOBBQ from "./PruebaOBBQ";
 import Stock from "./Stock";
 import QueryTest from "./QueryTest";
 import { useAuth } from "../context/AuthContext";
@@ -27,7 +26,6 @@ export default function Menu() {
   
   if (modulo === "traslado") return <TrasladoRapido onBack={() => setModulo("")} onLogout={handleLogout} />;
   if (modulo === "picking") return <Picking onBack={() => setModulo("")} onLogout={handleLogout} />;
-  if (modulo === "pruebaOBBQ") return <PruebaOBBQ onBack={() => setModulo("")} onLogout={handleLogout} />;
   if (modulo === "stock") return <Stock onBack={() => setModulo("")} onLogout={handleLogout} />;
   if (modulo === "queryTest") return <QueryTest onBack={() => setModulo("")} onLogout={handleLogout} />;
 
@@ -42,7 +40,6 @@ export default function Menu() {
         <div className="menu-buttons">
           <button className="menu-btn destacado" onClick={() => setModulo("traslado")}>Traslado Rápido</button>
           <button className="menu-btn destacado" onClick={() => setModulo("picking")}>Picking</button>
-          <button className="menu-btn destacado" onClick={() => setModulo("pruebaOBBQ")}>Prueba OBTN</button>
           <button className="menu-btn destacado" onClick={() => setModulo("stock")}>Stock</button>
           <button className="menu-btn" onClick={() => setModulo("queryTest")}>🧪 Prueba Queries</button>
         </div>

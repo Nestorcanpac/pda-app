@@ -44,10 +44,10 @@ export default function TrasladoRapido({ onBack, onLogout }) {
     setError("");
     setDesc("");
     setFilas(null);
-    setFilaSel(null);
-    setUbicacionDestino("");
-    setCantidad("");
-    setAlmacenDestino("");
+      setFilaSel(null);
+      setUbicacionDestino("");
+      setCantidad("");
+      setAlmacenDestino("");
 
     try {
       const loteValue = lote.trim();
@@ -91,9 +91,9 @@ export default function TrasladoRapido({ onBack, onLogout }) {
           setFilas(false);
           setDesc("");
         }
-      } else {
+    } else {
         setFilas(false);
-        setDesc("");
+      setDesc("");
       }
     } catch (err) {
       console.error('Error al buscar lote:', err);
