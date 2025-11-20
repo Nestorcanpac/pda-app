@@ -1,8 +1,8 @@
 import React, { useState } from "react";
 import "./Menu.css";
-import TrasladoRapido from "./TrasladoRapido";
 import Picking from "./Picking";
 import Stock from "./Stock";
+import TrasladoRapido from "./TrasladoRapido";
 import QueryTest from "./QueryTest";
 import { useAuth } from "../context/AuthContext";
 
@@ -17,16 +17,16 @@ function LogoutIcon() {
 }
 
 export default function Menu() {
-  const { logout } = useAuth();
+  const { logout, employeeName } = useAuth();
   const [modulo, setModulo] = useState("");
   
   const handleLogout = async () => {
     await logout();
   };
   
+  if (modulo === "stock") return <Stock onBack={() => setModulo("")} onLogout={handleLogout} />;
   if (modulo === "traslado") return <TrasladoRapido onBack={() => setModulo("")} onLogout={handleLogout} />;
   if (modulo === "picking") return <Picking onBack={() => setModulo("")} onLogout={handleLogout} />;
-  if (modulo === "stock") return <Stock onBack={() => setModulo("")} onLogout={handleLogout} />;
   if (modulo === "queryTest") return <QueryTest onBack={() => setModulo("")} onLogout={handleLogout} />;
 
   return (
@@ -36,11 +36,25 @@ export default function Menu() {
         <button className="header-logout" aria-label="Cerrar sesión" onClick={handleLogout}><LogoutIcon /></button>
       </header>
       <main style={{paddingTop: 66}}>
+        {employeeName && (
+          <div style={{
+            background: '#e8f5f6',
+            color: '#0f6572',
+            padding: '1rem',
+            borderRadius: '8px',
+            marginBottom: '1.5rem',
+            textAlign: 'center',
+            fontSize: '1.1rem',
+            fontWeight: '600'
+          }}>
+            👋 Bienvenido, {employeeName}
+          </div>
+        )}
         <h1 className="menu-title">Selecciona un módulo</h1>
         <div className="menu-buttons">
           <button className="menu-btn destacado" onClick={() => setModulo("traslado")}>Traslado Rápido</button>
-          <button className="menu-btn destacado" onClick={() => setModulo("picking")}>Picking</button>
           <button className="menu-btn destacado" onClick={() => setModulo("stock")}>Stock</button>
+          <button className="menu-btn destacado" onClick={() => setModulo("picking")}>Picking</button>
           <button className="menu-btn" onClick={() => setModulo("queryTest")}>🧪 Prueba Queries</button>
         </div>
       </main>

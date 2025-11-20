@@ -2,12 +2,12 @@ import React, { useState } from "react";
 import "./Login.css";
 import Menu from "./Menu";
 import { useAuth } from "../context/AuthContext";
+import { getEmployeeByCardNumber } from "../services/queries.service";
+import { login as loginService } from "../services/auth.service";
 
 export default function Login() {
-  const { login, isAuthenticated, loading, backendAvailable } = useAuth();
-  const [companyDB, setCompanyDB] = useState("ZZZ_SBOHEIS_22042025");
-  const [userName, setUserName] = useState("manager");
-  const [password, setPassword] = useState("Sap@25");
+  const { isAuthenticated, loading, backendAvailable, setEmployee, verifySession } = useAuth();
+  const [cardNumber, setCardNumber] = useState("");
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [debugInfo, setDebugInfo] = useState("");
@@ -23,39 +23,70 @@ export default function Login() {
     setIsSubmitting(true);
     setDebugInfo("");
 
-    // Validar campos
-    if (!companyDB.trim() || !userName.trim() || !password.trim()) {
-      setError("Por favor, completa todos los campos");
+    // Validar que el código tenga 4 dígitos
+    const cardNumberValue = cardNumber.trim();
+    if (!cardNumberValue || cardNumberValue.length !== 4 || !/^\d{4}$/.test(cardNumberValue)) {
+      setError("Por favor, introduce un código de 4 dígitos válido");
       setIsSubmitting(false);
       return;
     }
 
     try {
-      console.log('Iniciando proceso de login...');
-      setDebugInfo('Conectando con el backend...');
+      console.log('[Login] Verificando empleado con CardNumber:', cardNumberValue);
+      setDebugInfo('Verificando código...');
       
-      const result = await login(
-        companyDB.trim(),
-        userName.trim(),
-        password
+      // 1. Verificar el empleado por CardNumber
+      const employee = await getEmployeeByCardNumber(cardNumberValue);
+      
+      if (!employee) {
+        setError("Código no encontrado. Verifica el código e intenta nuevamente.");
+        setIsSubmitting(false);
+        return;
+      }
+
+      console.log('[Login] Empleado encontrado:', employee);
+      const employeeName = employee.DisplayName || `${employee.FirstName || ''} ${employee.LastName || ''}`.trim() || 'Usuario';
+      
+      setDebugInfo('Iniciando sesión en SAP...');
+      
+      // 2. Hacer login automático al Service Layer con credenciales fijas
+      const loginResult = await loginService(
+        "ZZZ_SBOHEIS_22042025",
+        "manager",
+        "Sap@25"
       );
 
-      if (!result.success) {
-        const errorMsg = result.error || "Error al iniciar sesión. Verifica tus credenciales.";
-        console.error('Error en login:', errorMsg);
+      if (!loginResult.success) {
+        const errorMsg = loginResult.error || "Error al iniciar sesión en SAP.";
+        console.error('[Login] Error en login SAP:', errorMsg);
         setError(errorMsg);
         setDebugInfo(`Error: ${errorMsg}`);
         setIsSubmitting(false);
-      } else {
-        console.log('Login exitoso, redirigiendo...');
-        setDebugInfo('');
-        // Si es exitoso, el componente se re-renderizará y mostrará el Menu automáticamente
+        return;
       }
+
+      console.log('[Login] Login exitoso, guardando información del empleado...');
+      
+      // 3. Guardar el nombre del empleado en el contexto
+      setEmployee(employeeName);
+      
+      // 4. Verificar la sesión para actualizar el estado de autenticación
+      await verifySession();
+      
+      setDebugInfo('');
+      // Si es exitoso, el componente se re-renderizará y mostrará el Menu automáticamente
     } catch (err) {
-      console.error('Excepción capturada en handleSubmit:', err);
-      const errorMsg = err.message || err.toString() || "Error desconocido al intentar iniciar sesión";
+      console.error('[Login] Excepción capturada en handleSubmit:', err);
+      let errorMsg = "Error al verificar el código";
+      
+      if (err.message) {
+        errorMsg = err.message;
+      } else if (typeof err === 'string') {
+        errorMsg = err;
+      }
+      
       setError(errorMsg);
-      setDebugInfo(`Excepción: ${err.name} - ${errorMsg}`);
+      setDebugInfo(`Error: ${errorMsg}`);
       setIsSubmitting(false);
     }
   };
@@ -120,41 +151,26 @@ export default function Login() {
             {debugInfo}
           </div>
         )}
-        <label htmlFor="companyDB">Base de Datos (CompanyDB)</label>
+        <label htmlFor="cardNumber">Código de empleado</label>
         <input
           type="text"
-          id="companyDB"
-          name="companyDB"
-          placeholder="ZZZ_SBOHEIS_22042025"
-          autoComplete="organization"
-          value={companyDB}
-          onChange={(e) => setCompanyDB(e.target.value)}
+          id="cardNumber"
+          name="cardNumber"
+          placeholder="0000"
+          autoComplete="off"
+          value={cardNumber}
+          onChange={(e) => {
+            // Solo permitir números y máximo 4 dígitos
+            const value = e.target.value.replace(/\D/g, '').slice(0, 4);
+            setCardNumber(value);
+          }}
           disabled={isSubmitting}
           autoFocus
+          maxLength={4}
+          inputMode="numeric"
+          pattern="[0-9]{4}"
         />
-        <label htmlFor="user">Usuario</label>
-        <input
-          type="text"
-          id="user"
-          name="user"
-          placeholder="manager"
-          autoComplete="username"
-          value={userName}
-          onChange={(e) => setUserName(e.target.value)}
-          disabled={isSubmitting}
-        />
-        <label htmlFor="pass">Contraseña</label>
-        <input
-          type="password"
-          id="pass"
-          name="pass"
-          placeholder="contraseña"
-          autoComplete="current-password"
-          value={password}
-          onChange={(e) => setPassword(e.target.value)}
-          disabled={isSubmitting}
-        />
-        <button type="submit" disabled={isSubmitting}>
+        <button type="submit" disabled={isSubmitting || cardNumber.length !== 4}>
           {isSubmitting ? "Iniciando sesión..." : "Entrar"}
         </button>
       </form>

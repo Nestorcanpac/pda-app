@@ -1,8 +1,17 @@
-import React from "react";
-import "./TrasladoRapido.css";
-import { useScanner } from "../hooks/useScanner";
+import React, { useState } from "react";
 import { useAuth } from "../context/AuthContext";
-import { sapRequest } from "../services/sapService";
+import { getByLote, createStockTransfer, getItemVersion } from "../services/queries.service";
+import { useScanner } from "../hooks/useScanner";
+import MoveStock from "./MoveStock";
+import "./TrasladoRapido.css";
+
+function BackIcon() {
+  return (
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M19 12H5M12 19l-7-7 7-7" />
+    </svg>
+  );
+}
 
 function LogoutIcon() {
   return (
@@ -15,244 +24,374 @@ function LogoutIcon() {
 }
 
 export default function TrasladoRapido({ onBack, onLogout }) {
-  const { session } = useAuth();
-  const [lote, setLote] = React.useState("");
-  const [filas, setFilas] = React.useState(null); // null: sin buscar, false: no encontrado, []: resultados
-  const [desc, setDesc] = React.useState("");
-  const [filaSel, setFilaSel] = React.useState(null);
-  const [ubicacionDestino, setUbicacionDestino] = React.useState("");
-  const [almacenDestino, setAlmacenDestino] = React.useState("");
-  const [cantidad, setCantidad] = React.useState("");
-  const [scanMode, setScanMode] = React.useState(false); // indica que el usuario pidió escanear
-  const [scanTarget, setScanTarget] = React.useState(null); // 'lote' | 'ubicacion' | 'cantidad' | null
-  const [loading, setLoading] = React.useState(false);
-  const [error, setError] = React.useState("");
+  const { refreshSession, isAuthenticated, employeeName } = useAuth();
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState(null);
+  const [error, setError] = useState("");
+  const [lote, setLote] = useState("");
+  const [selectedLot, setSelectedLot] = useState(null);
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
+  const [successMessage, setSuccessMessage] = useState("");
+  const [itemVersions, setItemVersions] = useState({}); // Cache de ItemVersions por ItemCode
 
-  // Busca lote: hace POST a SQLQueries
-  const buscarLote = React.useCallback(async () => {
+  // Escáner HID: captura el código escaneado y lo pone en el campo lote
+  useScanner((code) => {
+    setLote(code);
+  });
+
+  const buscarLote = async () => {
+    // Verificar sesión primero
+    if (!isAuthenticated) {
+      const hasSession = await refreshSession();
+      if (!hasSession) {
+        setError("No hay sesión activa. Por favor, inicia sesión nuevamente.");
+        return;
+      }
+    }
+
     if (!lote.trim()) {
       setError("Por favor, introduce un número de lote");
       return;
     }
 
-    if (!session?.sessionId) {
-      setError("No hay sesión activa. Por favor, inicia sesión nuevamente.");
-      return;
-    }
-
     setLoading(true);
     setError("");
-    setDesc("");
-    setFilas(null);
-      setFilaSel(null);
-      setUbicacionDestino("");
-      setCantidad("");
-      setAlmacenDestino("");
+    setData(null);
 
     try {
       const loteValue = lote.trim();
-      const requestBody = {
-        ParamList: `lotenum='${loteValue}'`
-      };
       
-      console.log('Body que se envía:', JSON.stringify(requestBody));
-      console.log('Lote value:', loteValue);
+      console.log('[TrasladoRapido] Consultando lote:', loteValue);
       
-      const response = await sapRequest("/SQLQueries('GetLoteEsp2')/List", session.sessionId, {
-        method: 'POST',
-        body: JSON.stringify(requestBody)
-      });
+      // Usar el servicio que se comunica con el backend proxy
+      const response = await getByLote(loteValue);
+      
+      console.log('[TrasladoRapido] Respuesta recibida:', response);
 
-      console.log('Respuesta de SQLQueries:', response);
-
-      // Procesar la respuesta según la estructura que devuelva la API
-      // La respuesta tiene: { odata.metadata, SqlText, value: [...] }
+      // Procesar la respuesta
+      let lotData = response;
+      
       if (response && response.value && Array.isArray(response.value)) {
-        if (response.value.length > 0) {
-          // Mapear los resultados a la estructura esperada por la tabla
-          const filasMapeadas = response.value.map((item, idx) => ({
-            id: idx + 1,
-            lote: loteValue,
-            almacen: item.WarehouseCode || item.Warehouse || "",
-            ubicacion: item.Location || "",
-            cantidad: item.Quantity || item.OnHandQty || 0,
-            status: item.Status === "0" ? "DISPONIBLE" : item.Status === "1" ? "BLOQUEADO" : item.Status || "DESCONOCIDO",
-            itemCode: item.ItemCode || ""
-          }));
+        lotData = response;
+      } else if (Array.isArray(response)) {
+        lotData = { value: response };
+      }
+
+      if (lotData && lotData.value && Array.isArray(lotData.value)) {
+        if (lotData.value.length > 0) {
+          setData(lotData);
           
-          setFilas(filasMapeadas);
-          // Si hay ItemCode, usarlo como descripción
-          if (response.value[0].ItemCode) {
-            setDesc(response.value[0].ItemCode);
-          } else {
-            setDesc("Lote encontrado");
-          }
+          // Obtener ItemVersions para cada ItemCode único
+          const uniqueItemCodes = [...new Set(lotData.value.map(item => item.ItemCode).filter(Boolean))];
+          const versionsMap = {};
+          
+          // Hacer peticiones en paralelo para todos los ItemCodes
+          const versionPromises = uniqueItemCodes.map(async (itemCode) => {
+            try {
+              const version = await getItemVersion(itemCode);
+              if (version && version.UDF1) {
+                versionsMap[itemCode] = version.UDF1;
+              }
+            } catch (err) {
+              console.warn(`[TrasladoRapido] No se pudo obtener ItemVersion para ${itemCode}:`, err);
+            }
+          });
+          
+          await Promise.all(versionPromises);
+          setItemVersions(versionsMap);
         } else {
-          setFilas(false);
-          setDesc("");
+          setError("No se encontraron resultados para este lote");
+          setData(null);
+          setItemVersions({});
         }
-    } else {
-        setFilas(false);
-      setDesc("");
+      } else {
+        setError("Respuesta inválida del servidor");
+        setData(null);
+        setItemVersions({});
       }
     } catch (err) {
-      console.error('Error al buscar lote:', err);
-      setError(err.message || "Error al buscar el lote");
-      setFilas(false);
-      setDesc("");
+      console.error('Error al consultar lote:', err);
+      let errorMessage = "Error al consultar el lote";
+      
+      if (err) {
+        if (typeof err === 'string') {
+          errorMessage = err;
+        } else if (err.message) {
+          errorMessage = err.message;
+        } else if (err.response?.data) {
+          const responseData = err.response.data;
+          if (typeof responseData === 'string') {
+            errorMessage = responseData;
+          } else if (responseData.error) {
+            errorMessage = typeof responseData.error === 'string' ? responseData.error : JSON.stringify(responseData.error);
+          } else {
+            errorMessage = JSON.stringify(responseData);
+          }
+        }
+      }
+
+      if (errorMessage.includes('Sesión expirada') || errorMessage.includes('no hay sesión activa') || errorMessage.includes('401') || errorMessage.includes('403')) {
+        errorMessage = "Sesión expirada. Por favor, inicia sesión nuevamente.";
+      } else if (errorMessage.includes('No se pudo conectar al backend') || errorMessage.includes('ERR_NETWORK')) {
+        errorMessage = "No se pudo conectar al backend. Verifica que esté corriendo.";
+      }
+
+      setError(errorMessage);
+      setData(null);
+      setItemVersions({});
     } finally {
       setLoading(false);
     }
-  }, [lote, session]);
-
-  // Escáner HID: usar destino explícito si scanTarget está definido; de lo contrario, lógica por defecto
-  useScanner((code) => {
-    if (scanTarget === 'lote') {
-      setLote(code);
-      setScanMode(false);
-      setScanTarget(null);
-      setTimeout(() => buscarLote(), 0);
-      return;
-    }
-    if (scanTarget === 'ubicacion') {
-      setUbicacionDestino(code);
-      setAlmacenDestino(code ? "Almacén 2" : "");
-      setScanMode(false);
-      setScanTarget(null);
-      return;
-    }
-    if (scanTarget === 'cantidad') {
-      const num = String(code).replace(/[^0-9.,]/g, '').replace(',', '.');
-      setCantidad(num);
-      setScanMode(false);
-      setScanTarget(null);
-      return;
-    }
-
-    // Sin target explícito: por defecto, Lote si aún no hay resultados; si ya hay, Ubicación destino
-    if (!Array.isArray(filas)) {
-      setLote(code);
-      setScanMode(false);
-      setTimeout(() => buscarLote(), 0);
-    } else {
-      setUbicacionDestino(code);
-      setAlmacenDestino(code ? "Almacén 2" : "");
-      setScanMode(false);
-    }
-  });
-
-  // Cambio ubicación destino: almacén destino es "Almacén 2" si está relleno, sino vacío
-  const handleUbicDestChange = (e) => {
-    const value = e.target.value;
-    setUbicacionDestino(value);
-    setAlmacenDestino(value ? "Almacén 2" : "");
   };
 
-  const btnDisabled = filaSel === null || !ubicacionDestino.trim() || !cantidad.trim() || Number(cantidad) <= 0;
+  const handleMove = async (lotData) => {
+    try {
+      console.log('[TrasladoRapido] Iniciando movimiento:', lotData);
+      
+      const stockTransferData = {
+        FromWarehouse: lotData.Almacen,
+        ToWarehouse: lotData.destinationWhsCode,
+        U_IFGWHS_NOMUSR: employeeName || '', // Nombre del usuario logueado
+        StockTransferLines: [
+          {
+            ItemCode: lotData.ItemCode,
+            Quantity: lotData.quantityToMove,
+            BatchNumbers: [
+              {
+                BatchNumber: lotData.Lote,
+                Quantity: lotData.quantityToMove
+              }
+            ],
+            StockTransferLinesBinAllocations: [
+              {
+                BinAbsEntry: lotData.BinAbsEntry,
+                Quantity: lotData.quantityToMove,
+                BinActionType: 2, // batFromWarehouse
+                SerialAndBatchNumbersBaseLine: 0
+              },
+              {
+                BinAbsEntry: lotData.destinationBinAbsEntry,
+                Quantity: lotData.quantityToMove,
+                BinActionType: 1, // batToWarehouse
+                SerialAndBatchNumbersBaseLine: 0
+              }
+            ]
+          }
+        ]
+      };
+
+      console.log('[TrasladoRapido] Datos del StockTransfer:', stockTransferData);
+
+      await createStockTransfer(stockTransferData);
+      
+      setShowSuccessPopup(true);
+      setSuccessMessage(`Movimiento realizado correctamente: ${lotData.quantityToMove.toLocaleString('es-ES')} unidades del lote ${lotData.Lote} desde ${lotData.Ubicacion} hacia ${lotData.destinationBin}`);
+      
+      // Recargar los datos después de un movimiento exitoso
+      setTimeout(() => {
+        buscarLote();
+      }, 1500);
+    } catch (err) {
+      console.error('Error al realizar el movimiento:', err);
+      let errorMessage = "Error al realizar el movimiento";
+      
+      if (err) {
+        if (typeof err === 'string') {
+          errorMessage = err;
+        } else if (err.message) {
+          errorMessage = err.message;
+        } else if (err.response?.data) {
+          const responseData = err.response.data;
+          if (typeof responseData === 'string') {
+            errorMessage = responseData;
+          } else if (responseData.error) {
+            if (typeof responseData.error === 'string') {
+              errorMessage = responseData.error;
+            } else if (responseData.error.message) {
+              errorMessage = responseData.error.message;
+            } else if (responseData.error.message?.value) {
+              errorMessage = responseData.error.message.value;
+            } else {
+              errorMessage = JSON.stringify(responseData.error);
+            }
+          } else if (responseData.message) {
+            errorMessage = responseData.message;
+          } else {
+            errorMessage = JSON.stringify(responseData);
+          }
+        } else if (err.error) {
+          if (typeof err.error === 'string') {
+            errorMessage = err.error;
+          } else if (err.error.message) {
+            errorMessage = err.error.message;
+          } else {
+            errorMessage = JSON.stringify(err.error);
+          }
+        } else if (err.data) {
+          if (typeof err.data === 'string') {
+            errorMessage = err.data;
+          } else if (err.data.error) {
+            errorMessage = typeof err.data.error === 'string' ? err.data.error : JSON.stringify(err.data.error);
+          } else {
+            errorMessage = JSON.stringify(err.data);
+          }
+        } else {
+          if (err.status) {
+            errorMessage = `Error ${err.status}: ${err.message || 'Error desconocido'}`;
+          } else {
+            errorMessage = err.message || 'Error desconocido al realizar el movimiento';
+          }
+        }
+      }
+
+      if (errorMessage.includes('Sesión expirada') || errorMessage.includes('no hay sesión activa') || errorMessage.includes('401') || errorMessage.includes('403')) {
+        errorMessage = "Sesión expirada. Por favor, inicia sesión nuevamente.";
+      } else if (errorMessage.includes('No se pudo conectar al backend') || errorMessage.includes('ERR_NETWORK')) {
+        errorMessage = "No se pudo conectar al backend. Verifica que esté corriendo.";
+      }
+
+      setError(errorMessage);
+    }
+  };
+
+  if (selectedLot) {
+    return (
+      <MoveStock
+        lotData={selectedLot}
+        onBack={() => setSelectedLot(null)}
+        onConfirm={handleMove}
+        loading={loading}
+        error={error}
+      />
+    );
+  }
 
   return (
-    <div className="traslado-container">
+    <div className="traslado-fullscreen">
       <header className="traslado-header">
-        <button className="header-back" onClick={onBack} title="Atrás">&#8592;</button>
+        <button className="header-back" onClick={onBack} aria-label="Volver">
+          <BackIcon />
+        </button>
         <span className="traslado-title">Traslado rápido</span>
-        <button className="header-logout" aria-label="Cerrar sesión" onClick={onLogout}><LogoutIcon /></button>
+        <button className="header-logout" aria-label="Cerrar sesión" onClick={onLogout}>
+          <LogoutIcon />
+        </button>
       </header>
-      <main className="traslado-body">
-        {/* Buscador de lote */}
-        <div className="campo-group">
-          <label htmlFor="articulo" className="campo-label">Lote</label>
-          <div className="campo-con-boton">
-            <input id="articulo" type="text" className="campo-input" placeholder="" autoComplete="off" value={lote} onChange={e => setLote(e.target.value)} readOnly={loading} onKeyPress={e => { if (e.key === 'Enter' && !loading) buscarLote(); }}/>
-            <button type="button" className="boton-scan" title="Escanear lote" onClick={() => { setScanMode(true); setScanTarget('lote'); setFilas(null); setDesc(''); setFilaSel(null); setUbicacionDestino(''); setCantidad(''); setAlmacenDestino(''); setError(''); }} disabled={loading}>
-              <span role="img" aria-label="Escanear">📷</span>
-            </button>
-            <button type="button" className="boton-lupa" title="Buscar" onClick={buscarLote} disabled={loading || !lote.trim()}><span role="img" aria-label="Buscar">🔍</span></button>
-            <button type="button" className="boton-check" title="Check y empezar" onClick={buscarLote} disabled={loading || !lote.trim()} style={{marginLeft: '4px', padding: '8px 12px', backgroundColor: '#4CAF50', color: 'white', border: 'none', borderRadius: '4px', cursor: loading || !lote.trim() ? 'not-allowed' : 'pointer'}}>
-              ✓
+      <main className="traslado-main">
+        <div className="traslado-controls">
+          <h2>Buscar por Lote</h2>
+          <div className="traslado-input-group">
+            <input
+              type="text"
+              value={lote}
+              onChange={(e) => setLote(e.target.value)}
+              onKeyPress={(e) => {
+                if (e.key === 'Enter' && !loading) {
+                  buscarLote();
+                }
+              }}
+              placeholder="Número de lote"
+              disabled={loading}
+              className="traslado-input"
+              autoFocus
+            />
+            <button
+              onClick={buscarLote}
+              disabled={loading || !lote.trim()}
+              className="traslado-btn"
+            >
+              {loading ? "Buscando..." : "Buscar"}
             </button>
           </div>
-          {scanMode && scanTarget === 'lote' && <div className="scan-hint">Escanea el lote con el gatillo…</div>}
-          {error && <div className="error-message" style={{color: '#c33', marginTop: '8px', fontSize: '0.9rem'}}>{error}</div>}
-          {loading && <div className="loading-message" style={{color: '#666', marginTop: '8px', fontSize: '0.9rem'}}>Buscando lote...</div>}
         </div>
-        {/* Panel azul descripción */}
-        {desc && (
-          <div className="descripcion-panel"><span role="img" aria-label="info" className="desc-ico">📦</span> {desc}</div>
-        )}
-        {/* Tabla de resultados */}
-        {Array.isArray(filas) && filas.length > 0 && (
-          <div className="tabla-palets-scroll">
-            <table className="tabla-palets">
-              <thead>
-                <tr>
-                  <th>Lote</th><th>Almacén</th><th>Ubicación</th><th>Cantidad</th><th>Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filas.map((fila, idx) => (
-                  <tr
-                    key={fila.id}
-                    className={"tp-row" + (filaSel === idx ? " tp-row-sel" : "")}
-                    onClick={() => {
-                      setFilaSel(idx);
-                      setUbicacionDestino("");
-                      setAlmacenDestino("");
-                      setCantidad("");
-                    }}
-                  >
-                    <td>{fila.lote}</td>
-                    <td>{fila.almacen}</td>
-                    <td>{fila.ubicacion}</td>
-                    <td>{fila.cantidad}</td>
-                    <td>{fila.status}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+
+        {error && (
+          <div className="traslado-error">
+            <strong>Error:</strong> {error}
           </div>
         )}
-        {/* Total */}
-        {Array.isArray(filas) && filas.length > 0 && (
-          <div className="total-linea">{filas.length} Total</div>
-        )}
-        {/* Si no hay resultados */}
-        {filas === false && (
-          <div className="lista-elementos-vacia">No hay elementos</div>
-        )}
-        {/* Formulario destino solo al seleccionar fila */}
-        {Array.isArray(filas) && filas.length > 0 && filaSel !== null && (
-          <div className="seccion-sub">
-            <span className="seccion-titulo">Destino</span>
-            <div className="campo-group">
-              <label htmlFor="ubicacion-destino" className="campo-label">Ubicación destino</label>
-              <div className="campo-con-boton">
-                <input id="ubicacion-destino" type="text" className="campo-input" placeholder="" autoComplete="off" value={ubicacionDestino} onChange={handleUbicDestChange} />
-                <button type="button" className="boton-scan" title="Escanear ubicación" onClick={() => { setScanMode(true); setScanTarget('ubicacion'); }}>
-                  <span role="img" aria-label="Escanear">📷</span>
-                </button>
-                <button type="button" className="boton-lupa" title="Buscar"><span role="img" aria-label="Buscar">🔍</span></button>
-              </div>
-              {scanMode && scanTarget === 'ubicacion' && <div className="scan-hint">Escanea la ubicación destino…</div>}
+
+        {data && (
+          <div className="traslado-results">
+            <div className="traslado-summary">
+              <p><strong>Items encontrados:</strong> {data.value ? data.value.length : 'N/A'}</p>
             </div>
-            <div className="campo-group">
-              <label htmlFor="cantidad" className="campo-label">Cantidad</label>
-              <div className="campo-con-boton">
-                <input id="cantidad" type="number" className="campo-input" placeholder="" autoComplete="off" value={cantidad} onChange={e=>setCantidad(e.target.value)} />
-                <button type="button" className="boton-scan" title="Escanear cantidad" onClick={() => { setScanMode(true); setScanTarget('cantidad'); }}>
-                  <span role="img" aria-label="Escanear">📷</span>
-                </button>
+            {data.value && data.value.length > 0 && (
+              <div className="traslado-cards-container">
+                <h4>Lotes ({data.value.length}):</h4>
+                <div className="traslado-cards-grid">
+                  {data.value.map((row, index) => {
+                    const cantidad = row.Cantidad !== undefined ? parseFloat(row.Cantidad) : 0;
+                    const udf1 = itemVersions[row.ItemCode] ? parseFloat(itemVersions[row.ItemCode]) : null;
+                    const cajas = udf1 && udf1 > 0 && cantidad > 0 
+                      ? (cantidad / udf1) 
+                      : null;
+                    
+                    return (
+                      <div key={index} className="traslado-card">
+                        <div className="traslado-card-content">
+                          <div className="traslado-card-row">
+                            <div className="traslado-card-field">
+                              <span className="traslado-card-label">Item Code:</span>
+                              <span className="traslado-card-value">{row.ItemCode || '-'}</span>
+                            </div>
+                            <div className="traslado-card-field">
+                              <span className="traslado-card-label">Lote:</span>
+                              <span className="traslado-card-value">{row.Lote || '-'}</span>
+                            </div>
+                          </div>
+                          <div className="traslado-card-field">
+                            <span className="traslado-card-label">Cajas:</span>
+                            <span className="traslado-card-value traslado-card-quantity">
+                              {cajas !== null 
+                                ? (cajas % 1 === 0 ? cajas.toLocaleString('es-ES') : cajas.toFixed(2).replace(/\.?0+$/, ''))
+                                : '-'
+                              }
+                            </span>
+                          </div>
+                          <div className="traslado-card-row">
+                            <div className="traslado-card-field">
+                              <span className="traslado-card-label">Ubicación:</span>
+                              <span className="traslado-card-value">{row.Ubicacion || '-'}</span>
+                            </div>
+                            <div className="traslado-card-field">
+                              <span className="traslado-card-label">Almacén:</span>
+                              <span className="traslado-card-value">{row.Almacen || '-'}</span>
+                            </div>
+                          </div>
+                        </div>
+                        <button 
+                          className="traslado-move-btn"
+                          onClick={() => {
+                            setSelectedLot(row);
+                          }}
+                        >
+                          Mover
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
-              {scanMode && scanTarget === 'cantidad' && <div className="scan-hint">Escanea la cantidad…</div>}
-            </div>
+            )}
           </div>
         )}
-        <button className="btn-aceptar" disabled={btnDisabled}>ACEPTAR</button>
       </main>
-      <footer className="traslado-footer">
-        No se ha especificado un código
-      </footer>
+      
+      {/* Popup de éxito */}
+      {showSuccessPopup && (
+        <div className="traslado-success-popup-overlay" onClick={() => setShowSuccessPopup(false)}>
+          <div className="traslado-success-popup" onClick={(e) => e.stopPropagation()}>
+            <div className="traslado-success-icon">✓</div>
+            <h3>Movimiento realizado</h3>
+            <p>{successMessage}</p>
+            <button onClick={() => setShowSuccessPopup(false)} className="traslado-success-btn">
+              Aceptar
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
-
 

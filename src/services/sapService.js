@@ -286,11 +286,26 @@ export const sapRequest = async (endpoint, sessionId, options = {}) => {
         errorData = {};
       }
       console.error('Error response data:', errorData);
+      
+      // Detectar errores de sesión expirada
+      if (response.status === 401 || response.status === 403) {
+        const errorMessage = errorData.error?.message?.value || 
+                            errorData.error?.message || 
+                            errorData.message || 
+                            `Sesión expirada (${response.status})`;
+        const sessionError = new Error(errorMessage);
+        sessionError.status = response.status;
+        sessionError.isSessionError = true;
+        throw sessionError;
+      }
+      
       const errorMessage = errorData.error?.message?.value || 
                           errorData.error?.message || 
                           errorData.message || 
                           `Error ${response.status}: ${response.statusText}`;
-      throw new Error(errorMessage);
+      const error = new Error(errorMessage);
+      error.status = response.status;
+      throw error;
     }
 
     return await response.json();

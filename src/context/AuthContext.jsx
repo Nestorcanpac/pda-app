@@ -15,6 +15,7 @@ export const AuthProvider = ({ children }) => {
   const [session, setSession] = useState(null);
   const [loading, setLoading] = useState(true);
   const [backendAvailable, setBackendAvailable] = useState(null); // null = no verificado, true/false = verificado
+  const [employeeName, setEmployeeName] = useState(null); // Nombre del empleado logueado
 
   // Verificar backend y sesión al iniciar
   useEffect(() => {
@@ -99,14 +100,34 @@ export const AuthProvider = ({ children }) => {
     }
   };
 
+  // Función para verificar si hay sesión después del login automático
+  const verifySession = async () => {
+    try {
+      const sessionInfo = await getSession();
+      if (sessionInfo.hasSession) {
+        setSession(sessionInfo.session);
+        return true;
+      } else {
+        setSession(null);
+        return false;
+      }
+    } catch (error) {
+      console.error('Error al verificar sesión:', error);
+      setSession(null);
+      return false;
+    }
+  };
+
   const logout = async () => {
     try {
       await logoutService();
       setSession(null);
+      setEmployeeName(null);
     } catch (error) {
       console.error('Error al cerrar sesión:', error);
       // Aun así, limpiar el estado local
       setSession(null);
+      setEmployeeName(null);
     }
   };
 
@@ -129,14 +150,26 @@ export const AuthProvider = ({ children }) => {
 
   const isAuthenticated = !!session?.hasSession;
 
+  const setEmployee = (name) => {
+    setEmployeeName(name);
+  };
+
+  const clearEmployee = () => {
+    setEmployeeName(null);
+  };
+
   const value = {
     session,
     login,
     logout,
     refreshSession,
+    verifySession,
     isAuthenticated,
     loading,
     backendAvailable,
+    employeeName,
+    setEmployee,
+    clearEmployee,
   };
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
