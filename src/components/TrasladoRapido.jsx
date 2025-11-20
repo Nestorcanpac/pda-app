@@ -148,10 +148,16 @@ export default function TrasladoRapido({ onBack, onLogout }) {
     try {
       console.log('[TrasladoRapido] Iniciando movimiento:', lotData);
       
+      // Asegurar que tenemos el nombre del empleado
+      const userName = employeeName && employeeName.trim() !== '' ? employeeName.trim() : '';
+      if (!userName) {
+        console.warn('[TrasladoRapido] Advertencia: No se encontró el nombre del empleado. El campo U_IFGWHS_NOMUSR se enviará vacío.');
+      }
+      
       const stockTransferData = {
         FromWarehouse: lotData.Almacen,
         ToWarehouse: lotData.destinationWhsCode,
-        U_IFGWHS_NOMUSR: employeeName || '', // Nombre del usuario logueado
+        U_IFGWHS_NOMUSR: userName, // Siempre incluir el campo, incluso si está vacío
         StockTransferLines: [
           {
             ItemCode: lotData.ItemCode,
@@ -180,7 +186,8 @@ export default function TrasladoRapido({ onBack, onLogout }) {
         ]
       };
 
-      console.log('[TrasladoRapido] Datos del StockTransfer:', stockTransferData);
+      console.log('[TrasladoRapido] Datos del StockTransfer:', JSON.stringify(stockTransferData, null, 2));
+      console.log('[TrasladoRapido] Campo U_IFGWHS_NOMUSR:', stockTransferData.U_IFGWHS_NOMUSR || 'NO DEFINIDO');
 
       await createStockTransfer(stockTransferData);
       
